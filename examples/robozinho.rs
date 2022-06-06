@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy::window::PresentMode;
 use robozinho::board::*;
+use robozinho::params::*;
 
 fn main() {
     App::new()
@@ -15,9 +16,12 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .init_resource::<Board>()
         .insert_resource(Board::new(42, 42))
+        .insert_resource(Params::default())
         .add_startup_system_to_stage(StartupStage::PreStartup, setup_board)
         .add_startup_system(setup_camera)
         .add_startup_system(color_cells)
+        .add_startup_system(spawn_tools)
+        .add_system(render_tools)
         .run();
 }
 

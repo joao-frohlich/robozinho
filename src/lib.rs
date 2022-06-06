@@ -1,5 +1,7 @@
 pub mod board;
 pub mod cell;
+pub mod factory;
+pub mod params;
 pub mod terrain;
 pub mod tool;
 

@@ -1,6 +1,10 @@
 use crate::cell::Cell;
+use crate::params::Params;
 use crate::terrain::Terrain;
+use crate::tool::Tool;
+use crate::tool::ToolType;
 use bevy::prelude::*;
+use rand::distributions::{Distribution, Uniform};
 use std::fs;
 
 pub struct Board {
@@ -50,7 +54,11 @@ fn read_terrain() -> Vec<Vec<Terrain>> {
     data
 }
 
-pub fn setup_board(mut commands: Commands, windows: Res<Windows>, mut board: ResMut<Board>) {
+pub fn setup_board(
+    mut commands: Commands,
+    windows: Res<Windows>,
+    mut board: ResMut<Board>,
+) {
     let window = windows.primary();
     let border_width = 2.0;
     let cell_width =
@@ -60,13 +68,13 @@ pub fn setup_board(mut commands: Commands, windows: Res<Windows>, mut board: Res
 
     let terrain = read_terrain();
 
-    for xx in 0..board.width {
-        for yy in 0..board.height {
+    for xx in 0..board.height {
+        for yy in 0..board.width {
             let x = xx as f32;
             let y = yy as f32;
-            let cx = -window.width() / 2. + cell_width * x + border_width * x + cell_width / 2.;
-            let cy = -window.height() / 2. + cell_height * y + border_width * y + cell_height / 2.;
-            let cell_x = board.height-yy-1;
+            let cx = -window.height() / 2. + cell_height * x + border_width * x + cell_height / 2.;
+            let cy = -window.width() / 2. + cell_width * y + border_width * y + cell_width / 2.;
+            let cell_x = board.height - yy - 1;
             let cell_y = xx;
             let entity = commands
                 .spawn_bundle(SpriteBundle {
@@ -78,9 +86,57 @@ pub fn setup_board(mut commands: Commands, windows: Res<Windows>, mut board: Res
                     },
                     ..default()
                 })
-                .insert(Cell::new(None, terrain[cell_x][cell_y]))
+                .insert(Cell::new(terrain[cell_x][cell_y], None, None))
                 .id();
-            board.cells[cell_x][cell_y] = entity;
+            board.cells[xx][yy] = entity;
+        }
+    }
+}
+
+pub fn spawn_tools(mut commands: Commands, asset_server: Res<AssetServer>, board: Res<Board>, windows: Res<Windows>, mut query: Query<&mut Cell>, params: Res<Params>) {
+    asset_server.watch_for_changes().unwrap();
+
+    let window = windows.primary();
+    let border_width = 2.0;
+    let cell_width =
+        (window.width() - border_width * (board.width - 1) as f32) / (board.width as f32);
+    let cell_height =
+        (window.height() - border_width * (board.height - 1) as f32) / (board.height as f32);
+
+    let between_width = Uniform::from(0..board.width);
+    let between_height = Uniform::from(0..board.height);
+    let mut rng = rand::thread_rng();
+    
+
+    for (tool, quantity) in &params.items_quantity {
+        let mut cont = 0;
+        while cont < *quantity {
+            let x = between_width.sample(&mut rng);
+            let y = between_height.sample(&mut rng);
+            let mut cell = query.get_mut(board.cells[x][y]).unwrap();
+            match cell.terrain {
+                Terrain::Grass => match cell.tool {
+                    Some(_) => {}
+                    None => {
+                        let xx = x as f32;
+                        let yy = y as f32;
+                        let cx = -window.height() / 2. + cell_height * xx + border_width * xx + cell_height / 2.;
+                        let cy = -window.width() / 2. + cell_width * yy + border_width * yy + cell_width / 2.;
+                        commands.spawn_bundle(SpriteBundle {
+                            texture: asset_server.load("empty_texture.png"),
+                            transform: Transform::from_xyz(cx, cy, 2.0),
+                            sprite: Sprite {
+                                custom_size: Some(Vec2::new(cell_width, cell_height)),
+                                ..default()
+                            },
+                            ..default()
+                        }).insert(Tool::new(x, y, Some(*tool)));
+                        cell.tool = Some(*tool);
+                        cont += 1;
+                    }
+                },
+                _ => {}
+            }
         }
     }
 }
@@ -98,3 +154,20 @@ pub fn color_cells(mut query_cell: Query<(&Cell, &mut Sprite), Changed<Cell>>) {
         sprite.color = Color::rgb(red, green, blue);
     }
 }
+
+pub fn render_tools(asset_server: Res<AssetServer>, mut query: Query<(&Tool, &mut Handle<Image>), Changed<Tool>>) {
+    for (tool, mut image_handle) in query.iter_mut() {
+        match tool.tool_type {
+            Some(ToolType::Battery) => {*image_handle = asset_server.load("electric_battery.png")}
+            Some(ToolType::WeldingArm) => {*image_handle = asset_server.load("welding_arm.png")}
+            Some(ToolType::SuctionPump) => {*image_handle = asset_server.load("suction_pump.png")}
+            Some(ToolType::CoolingDevice) => {*image_handle = asset_server.load("cooling_device.png")}
+            Some(ToolType::PneumaticArm) => {*image_handle = asset_server.load("pneumatic_arm.png")}
+            None => {*image_handle = asset_server.load("empty_texture.png")}
+        }
+    }
+}
+
+
+
+
