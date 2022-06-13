@@ -1,10 +1,10 @@
 use bevy::prelude::*;
 use bevy::window::PresentMode;
+use robozinho::agent::*;
 use robozinho::board::*;
 use robozinho::factory::*;
 use robozinho::params::*;
 use robozinho::tool::*;
-use robozinho::agent::*;
 
 fn main() {
     App::new()
@@ -25,9 +25,11 @@ fn main() {
         .add_startup_system(color_cells)
         .add_startup_system(spawn_tools)
         .add_startup_system(spawn_factories)
-        .add_startup_system_to_stage(StartupStage::PostStartup, setup_agent)
+        .add_startup_system(setup_agent)
+        .add_startup_system_to_stage(StartupStage::PostStartup, setup_agent_factories)
         .add_system(render_tools)
         .add_system(render_factories)
+        .add_system(move_agent)
         .run();
 }
 

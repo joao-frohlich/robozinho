@@ -8,10 +8,10 @@ use rand::distributions::{Distribution, Uniform};
 
 #[derive(Clone, Copy, Component)]
 pub struct Factory {
-    x: usize,
-    y: usize,
-    needed_tool: Option<ToolType>,
-    quantity: usize,
+    pub x: usize,
+    pub y: usize,
+    pub needed_tool: Option<ToolType>,
+    pub quantity: usize,
 }
 
 impl Factory {
