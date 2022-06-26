@@ -192,6 +192,21 @@ pub fn check_requisitions(agent: &mut Agent) {
     }
 }
 
+fn check_next_destination(mut agent: &Agent) -> usize {
+    let mut min_distance: usize = 1000000000;
+    let mut idx: usize = 0;
+    let mut min_idx: usize = 0;
+    for (x,y) in &agent.destination_queue {
+        let distance = ((agent.x as i32-*x as i32).abs() + (agent.y as i32-*y as i32).abs()) as usize;
+        if distance < min_distance {
+            min_distance = distance;
+            min_idx = idx;
+        }
+        idx += 1;
+    }
+    min_idx
+}
+
 pub fn move_agent(
     windows: Res<Windows>,
     board: Res<Board>,
@@ -225,6 +240,23 @@ pub fn move_agent(
     );
 
     // Implementar A* aqui
+
+    // Distância heurística: Manhattan
+
+    while agent.destination_queue.len() > 0 {
+        let next_idx = check_next_destination(&agent);
+        
+    }
+
+    // Primeiro passo e meio: Verificar se o destino escolhido é válido (i. e. existe uma
+    // requisição para o item). Caso não seja, ir para o passo final.
+
+    // Segundo passo: executar o algoritmo de A* e determinar o caminho até o destino.
+
+    // Terceiro passo: ir até o destino, marcando novos destinos no caminho, mas sem olhar para
+    // esses novos destinos.
+
+    // Passo final: Repetir primeiro passo até que a lista de destinos esteja vazia.
 
     let mut weights: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
     let mut has_option = false;
