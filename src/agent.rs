@@ -5,6 +5,8 @@ use crate::params::Params;
 use crate::terrain::Terrain;
 use crate::tool::*;
 use bevy::prelude::*;
+use priority_queue::PriorityQueue;
+use std::collections::HashSet;
 use rand::distributions::WeightedIndex;
 use rand::distributions::{Distribution, Uniform};
 use std::{thread, time};
@@ -192,12 +194,16 @@ pub fn check_requisitions(agent: &mut Agent) {
     }
 }
 
-fn check_next_destination(mut agent: &Agent) -> usize {
+fn h((ax, ay) : (i32, i32), (bx, by) : (i32, i32)) -> i32 {
+    (ax-bx).abs() + (ay-by).abs()
+}
+
+fn check_next_destination(agent: &Agent) -> usize {
     let mut min_distance: usize = 1000000000;
     let mut idx: usize = 0;
     let mut min_idx: usize = 0;
     for (x,y) in &agent.destination_queue {
-        let distance = ((agent.x as i32-*x as i32).abs() + (agent.y as i32-*y as i32).abs()) as usize;
+        let distance = h((agent.x as i32, agent.y as i32),(*x as i32, *y as i32)) as usize;
         if distance < min_distance {
             min_distance = distance;
             min_idx = idx;
@@ -207,12 +213,29 @@ fn check_next_destination(mut agent: &Agent) -> usize {
     min_idx
 }
 
+fn search_requisition(tool_type: ToolType, agent: &Agent) -> bool {
+    for factory in &agent.requisitions {
+        if factory.needed_tool == Some(tool_type) {
+            return true;
+        }
+    }
+    false
+}
+
+fn valid(x: i32, y: i32, width: i32, height: i32) -> bool {
+    if x < 0 {return false;}
+    if y < 0 {return false;}
+    if x >= width {return false;}
+    if y >= height {return false;}
+    true
+}
+
 pub fn move_agent(
     windows: Res<Windows>,
     board: Res<Board>,
     mut query: Query<(&mut Agent, &mut Transform)>,
     query_cell: Query<&mut Cell>,
-    mut params: ResMut<Params>,
+    mut _params: ResMut<Params>,
 ) {
     let time = time::Duration::from_secs_f32(0.1);
     thread::sleep(time);
@@ -243,9 +266,59 @@ pub fn move_agent(
 
     // Distância heurística: Manhattan
 
+    let width = board.width as i32;
+    let height = board.height as i32;
+
     while agent.destination_queue.len() > 0 {
         let next_idx = check_next_destination(&agent);
-        
+        let (dx, dy) = agent.destination_queue.remove(next_idx);
+        let cell = query_cell.get(board.cells[dx][dy]).unwrap();
+        let mut should_find_path = true;
+        match cell.tool {
+            Some(ToolType::Battery) => {should_find_path = search_requisition(ToolType::Battery, &agent)}
+            Some(ToolType::WeldingArm) => {should_find_path = search_requisition(ToolType::WeldingArm, &agent)}
+            Some(ToolType::SuctionPump) => {should_find_path = search_requisition(ToolType::SuctionPump, &agent)}
+            Some(ToolType::CoolingDevice) => {should_find_path = search_requisition(ToolType::CoolingDevice, &agent)}
+            Some(ToolType::PneumaticArm) => {should_find_path = search_requisition(ToolType::PneumaticArm, &agent)}
+            None => {}
+        }
+        if !should_find_path {
+            continue;
+        }
+        let (ax, ay) = (agent.x as i32, agent.y as i32);
+        let mut pq = PriorityQueue::new();
+        let mut vis: HashSet<(i32, i32)> = HashSet::new();
+        let mut final_cost = 0;
+        pq.push((ax, ay), 0);
+        while !pq.is_empty() {
+            let ((cx, cy), cost) = pq.pop().unwrap();
+            if vis.contains(&(dx as i32, dy as i32)) {
+                continue;
+            }
+            if vis.contains(&(cx, cy)) {
+                continue;
+            }
+            vis.insert((cx, cy));
+            if cx == dx as i32 && cy == dy as i32 {
+                final_cost = cost;
+            }
+            for (mx, my) in moves {
+                let (nx, ny) = (cx+mx, cy+my);
+                if !valid(nx, ny, width, height) {continue;}
+                let n_cell = query_cell.get(board.cells[nx as usize][ny as usize]).unwrap();
+                let g:i32 = match n_cell.terrain {
+                    Terrain::Grass => 1,
+                    Terrain::Mountain => 5,
+                    Terrain::Swamp => 10,
+                    Terrain::Desert => 20,
+                    Terrain::Obstacle => -1
+                };
+                let n_cost = cost - g - h((nx,ny), (dx as i32, dy as i32));
+                pq.push((nx, ny), n_cost);
+            }
+        }
+        //Agora precisamos pegar o caminho de "menor" custo
+        println!("Distancia entre ({}, {}) e ({}, {}): {}", ax, ay, dx, dy, -final_cost);
     }
 
     // Primeiro passo e meio: Verificar se o destino escolhido é válido (i. e. existe uma
