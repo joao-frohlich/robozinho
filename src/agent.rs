@@ -2,13 +2,14 @@ use crate::board::Board;
 use crate::cell::Cell;
 use crate::factory::*;
 use crate::params::Params;
+use crate::path::*;
 use crate::terrain::Terrain;
 use crate::tool::*;
 use bevy::prelude::*;
 use priority_queue::PriorityQueue;
-use std::collections::HashSet;
 use rand::distributions::WeightedIndex;
 use rand::distributions::{Distribution, Uniform};
+use std::collections::{HashMap};
 use std::{thread, time};
 
 #[derive(Default, Component)]
@@ -194,16 +195,16 @@ pub fn check_requisitions(agent: &mut Agent) {
     }
 }
 
-fn h((ax, ay) : (i32, i32), (bx, by) : (i32, i32)) -> i32 {
-    (ax-bx).abs() + (ay-by).abs()
+fn h((ax, ay): (i32, i32), (bx, by): (i32, i32)) -> i32 {
+    (ax - bx).abs() + (ay - by).abs()
 }
 
 fn check_next_destination(agent: &Agent) -> usize {
     let mut min_distance: usize = 1000000000;
     let mut idx: usize = 0;
     let mut min_idx: usize = 0;
-    for (x,y) in &agent.destination_queue {
-        let distance = h((agent.x as i32, agent.y as i32),(*x as i32, *y as i32)) as usize;
+    for (x, y) in &agent.destination_queue {
+        let distance = h((agent.x as i32, agent.y as i32), (*x as i32, *y as i32)) as usize;
         if distance < min_distance {
             min_distance = distance;
             min_idx = idx;
@@ -223,229 +224,367 @@ fn search_requisition(tool_type: ToolType, agent: &Agent) -> bool {
 }
 
 fn valid(x: i32, y: i32, width: i32, height: i32) -> bool {
-    if x < 0 {return false;}
-    if y < 0 {return false;}
-    if x >= width {return false;}
-    if y >= height {return false;}
+    if x < 0 {
+        return false;
+    }
+    if y < 0 {
+        return false;
+    }
+    if x >= width {
+        return false;
+    }
+    if y >= height {
+        return false;
+    }
     true
 }
 
 pub fn move_agent(
     windows: Res<Windows>,
     board: Res<Board>,
+    mut follow_path: ResMut<Path>,
     mut query: Query<(&mut Agent, &mut Transform)>,
     query_cell: Query<&mut Cell>,
     mut _params: ResMut<Params>,
 ) {
-    let time = time::Duration::from_secs_f32(0.1);
-    thread::sleep(time);
+    if follow_path.moves.is_empty() {
+        let time = time::Duration::from_secs_f32(0.1);
+        thread::sleep(time);
 
-    let moves: [(i32, i32); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+        let moves: [(i32, i32); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
 
-    let window = windows.primary();
-    let border_width = 2.0;
-    let cell_width =
-        (window.width() - border_width * (board.width - 1) as f32) / (board.width as f32);
-    let cell_height =
-        (window.height() - border_width * (board.height - 1) as f32) / (board.height as f32);
+        let window = windows.primary();
+        let border_width = 2.0;
+        let cell_width =
+            (window.width() - border_width * (board.width - 1) as f32) / (board.width as f32);
+        let cell_height =
+            (window.height() - border_width * (board.height - 1) as f32) / (board.height as f32);
 
-    let (mut agent, mut transform) = query.get_single_mut().unwrap();
+        let (mut agent, mut transform) = query.get_single_mut().unwrap();
 
-    check_requisitions(&mut agent);
+        // check_requisitions(&mut agent);
 
-    check_radius(
-        &board,
-        agent.x as i32,
-        agent.y as i32,
-        agent.radius as i32,
-        &mut agent.destination_queue,
-        &query_cell,
-    );
+        check_radius(
+            &board,
+            agent.x as i32,
+            agent.y as i32,
+            agent.radius as i32,
+            &mut agent.destination_queue,
+            &query_cell,
+        );
 
-    // Implementar A* aqui
+        // Implementar A* aqui
 
-    // Distância heurística: Manhattan
+        // Distância heurística: Manhattan
 
-    let width = board.width as i32;
-    let height = board.height as i32;
+        let width = board.width as i32;
+        let height = board.height as i32;
 
-    while agent.destination_queue.len() > 0 {
-        let next_idx = check_next_destination(&agent);
-        let (dx, dy) = agent.destination_queue.remove(next_idx);
-        let cell = query_cell.get(board.cells[dx][dy]).unwrap();
-        let mut should_find_path = true;
-        match cell.tool {
-            Some(ToolType::Battery) => {should_find_path = search_requisition(ToolType::Battery, &agent)}
-            Some(ToolType::WeldingArm) => {should_find_path = search_requisition(ToolType::WeldingArm, &agent)}
-            Some(ToolType::SuctionPump) => {should_find_path = search_requisition(ToolType::SuctionPump, &agent)}
-            Some(ToolType::CoolingDevice) => {should_find_path = search_requisition(ToolType::CoolingDevice, &agent)}
-            Some(ToolType::PneumaticArm) => {should_find_path = search_requisition(ToolType::PneumaticArm, &agent)}
-            None => {}
+        if agent.destination_queue.len() > 0 {
+            let next_idx = check_next_destination(&agent);
+            let (dx, dy) = agent.destination_queue.remove(next_idx);
+            let cell = query_cell.get(board.cells[dx][dy]).unwrap();
+            let mut should_find_path = true;
+            match cell.tool {
+                Some(ToolType::Battery) => {
+                    should_find_path = search_requisition(ToolType::Battery, &agent)
+                }
+                Some(ToolType::WeldingArm) => {
+                    should_find_path = search_requisition(ToolType::WeldingArm, &agent)
+                }
+                Some(ToolType::SuctionPump) => {
+                    should_find_path = search_requisition(ToolType::SuctionPump, &agent)
+                }
+                Some(ToolType::CoolingDevice) => {
+                    should_find_path = search_requisition(ToolType::CoolingDevice, &agent)
+                }
+                Some(ToolType::PneumaticArm) => {
+                    should_find_path = search_requisition(ToolType::PneumaticArm, &agent)
+                }
+                None => {
+                    match cell.factory {
+                        Some(_) => {}
+                        None => {should_find_path = false}
+                    }
+                }
+            }
+            
+            if should_find_path {
+                let (ax, ay) = (agent.x as i32, agent.y as i32);
+                let mut pq = PriorityQueue::new();
+                let mut partial_cost: HashMap<(i32, i32), i32> = HashMap::new();
+                let mut final_cost = -1000000;
+                let mut path: HashMap<(i32, i32), Vec<(i32, i32)>> = HashMap::new();
+                pq.push((ax, ay, 0, 0), 0);
+                while !pq.is_empty() {
+                    let ((cx, cy, mvx, mvy), cost) = pq.pop().unwrap();
+                    if -cost > -final_cost {
+                        continue;
+                    }
+                    if partial_cost.contains_key(&(cx, cy)) && cost > partial_cost[&(cx, cy)] {
+                        continue;
+                    }
+                    partial_cost.remove(&(cx, cy));
+                    partial_cost.insert((cx, cy), cost);
+                    match path.remove(&(cx, cy)) {
+                        Some(mut v) => {
+                            v.push((mvx, mvy));
+                            path.insert((cx, cy), v);
+                        }
+                        None => {
+                            let v = vec![(mvx, mvy)];
+                            path.insert((cx, cy), v);
+                        }
+                    }
+                    if cx == dx as i32 && cy == dy as i32 {
+                        final_cost = cost;
+                        continue;
+                    }
+                    for (mx, my) in moves {
+                        let (nx, ny) = (cx + mx, cy + my);
+                        if !valid(nx, ny, width, height) {
+                            continue;
+                        }
+                        let n_cell = query_cell
+                            .get(board.cells[nx as usize][ny as usize])
+                            .unwrap();
+                        let g: i32 = match n_cell.terrain {
+                            Terrain::Grass => 1,
+                            Terrain::Mountain => 5,
+                            Terrain::Swamp => 10,
+                            Terrain::Desert => 20,
+                            Terrain::Obstacle => -1,
+                        };
+                        let n_cost = cost - g - h((nx, ny), (dx as i32, dy as i32));
+                        if partial_cost.contains_key(&(nx, ny))
+                            && -n_cost > -partial_cost[&(nx, ny)]
+                        {
+                            continue;
+                        }
+                        path.remove(&(nx, ny));
+                        let mut partial_path: Vec<(i32, i32)> = vec![];
+                        for (xx, yy) in &path[&(cx, cy)] {
+                            partial_path.push((*xx, *yy));
+                        }
+                        path.insert((nx, ny), partial_path);
+                        pq.push((nx, ny, mx, my), n_cost);
+                    }
+                }
+                //Agora precisamos pegar o caminho de "menor" custo
+                for (mx, my) in &path[&(dx as i32, dy as i32)] {
+                    follow_path.moves.push((*mx, *my));
+                }
+
+                println!(
+                    "Distancia entre ({}, {}) e ({}, {}): {}",
+                    ax, ay, dx, dy, -final_cost
+                );
+                println!("Caminho: {:?}", path[&(dx as i32, dy as i32)]);
+            }
+        } else {
+            let mut weights: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
+            let mut has_option = false;
+            let mountain_cost = 5.0;
+            let swamp_cost = 10.0;
+            let desert_cost = 20.0;
+
+            if agent.x < board.height - 1 {
+                let x = agent.x + 1;
+                let y = agent.y;
+                let cell = query_cell.get(board.cells[x][y]).unwrap();
+                match cell.terrain {
+                    Terrain::Grass => {
+                        weights[0] = 1.0;
+                        has_option = true;
+                    }
+                    Terrain::Mountain => {
+                        weights[0] = 1.0 / mountain_cost;
+                        has_option = true;
+                    }
+                    Terrain::Swamp => {
+                        weights[0] = 1.0 / swamp_cost;
+                        has_option = true;
+                    }
+                    Terrain::Desert => {
+                        weights[0] = 1.0 / desert_cost;
+                        has_option = true;
+                    }
+                    _ => {}
+                }
+            }
+            if agent.y < board.width - 1 {
+                let x = agent.x;
+                let y = agent.y + 1;
+                let cell = query_cell.get(board.cells[x][y]).unwrap();
+                match cell.terrain {
+                    Terrain::Grass => {
+                        weights[1] = 1.0;
+                        has_option = true;
+                    }
+                    Terrain::Mountain => {
+                        weights[1] = 1.0 / mountain_cost;
+                        has_option = true;
+                    }
+                    Terrain::Swamp => {
+                        weights[1] = 1.0 / swamp_cost;
+                        has_option = true;
+                    }
+                    Terrain::Desert => {
+                        weights[1] = 1.0 / desert_cost;
+                        has_option = true;
+                    }
+                    _ => {}
+                }
+            }
+            if agent.x > 0 {
+                let x = agent.x - 1;
+                let y = agent.y;
+                let cell = query_cell.get(board.cells[x][y]).unwrap();
+                match cell.terrain {
+                    Terrain::Grass => {
+                        weights[2] = 1.0;
+                        has_option = true;
+                    }
+                    Terrain::Mountain => {
+                        weights[2] = 1.0 / mountain_cost;
+                        has_option = true;
+                    }
+                    Terrain::Swamp => {
+                        weights[2] = 1.0 / swamp_cost;
+                        has_option = true;
+                    }
+                    Terrain::Desert => {
+                        weights[2] = 1.0 / desert_cost;
+                        has_option = true;
+                    }
+                    _ => {}
+                }
+            }
+            if agent.y > 0 {
+                let x = agent.x;
+                let y = agent.y - 1;
+                let cell = query_cell.get(board.cells[x][y]).unwrap();
+                match cell.terrain {
+                    Terrain::Grass => {
+                        weights[3] = 1.0;
+                        has_option = true;
+                    }
+                    Terrain::Mountain => {
+                        weights[3] = 1.0 / mountain_cost;
+                        has_option = true;
+                    }
+                    Terrain::Swamp => {
+                        weights[3] = 1.0 / swamp_cost;
+                        has_option = true;
+                    }
+                    Terrain::Desert => {
+                        weights[3] = 1.0 / desert_cost;
+                        has_option = true;
+                    }
+                    _ => {}
+                }
+            }
+
+            if has_option {
+                let dist = WeightedIndex::new(&weights).unwrap();
+                let mut rng = rand::thread_rng();
+                let movement = moves[dist.sample(&mut rng)];
+                let new_x: usize = (agent.x as i32 + movement.0) as usize;
+                let new_y: usize = (agent.y as i32 + movement.1) as usize;
+                agent.x = new_x;
+                agent.y = new_y;
+            }
+
+            let x = agent.x as f32;
+            let y = agent.y as f32;
+            let cx = -window.width() / 2. + cell_width * x + border_width * x + cell_width / 2.;
+            let cy = -window.height() / 2. + cell_height * y + border_width * y + cell_height / 2.;
+            let translation = &mut transform.translation;
+            translation.x = cx;
+            translation.y = cy;
         }
-        if !should_find_path {
-            continue;
-        }
-        let (ax, ay) = (agent.x as i32, agent.y as i32);
-        let mut pq = PriorityQueue::new();
-        let mut vis: HashSet<(i32, i32)> = HashSet::new();
-        let mut final_cost = 0;
-        pq.push((ax, ay), 0);
-        while !pq.is_empty() {
-            let ((cx, cy), cost) = pq.pop().unwrap();
-            if vis.contains(&(dx as i32, dy as i32)) {
-                continue;
-            }
-            if vis.contains(&(cx, cy)) {
-                continue;
-            }
-            vis.insert((cx, cy));
-            if cx == dx as i32 && cy == dy as i32 {
-                final_cost = cost;
-            }
-            for (mx, my) in moves {
-                let (nx, ny) = (cx+mx, cy+my);
-                if !valid(nx, ny, width, height) {continue;}
-                let n_cell = query_cell.get(board.cells[nx as usize][ny as usize]).unwrap();
-                let g:i32 = match n_cell.terrain {
-                    Terrain::Grass => 1,
-                    Terrain::Mountain => 5,
-                    Terrain::Swamp => 10,
-                    Terrain::Desert => 20,
-                    Terrain::Obstacle => -1
-                };
-                let n_cost = cost - g - h((nx,ny), (dx as i32, dy as i32));
-                pq.push((nx, ny), n_cost);
-            }
-        }
-        //Agora precisamos pegar o caminho de "menor" custo
-        println!("Distancia entre ({}, {}) e ({}, {}): {}", ax, ay, dx, dy, -final_cost);
     }
+}
 
-    // Primeiro passo e meio: Verificar se o destino escolhido é válido (i. e. existe uma
-    // requisição para o item). Caso não seja, ir para o passo final.
+pub fn follow_path(
+    windows: Res<Windows>,
+    board: Res<Board>,
+    mut follow_path: ResMut<Path>,
+    mut query: Query<(&mut Agent, &mut Transform)>,
+    mut query_cell: Query<&mut Cell>,
+    mut _params: ResMut<Params>,
+    mut query_tool: Query<&mut Tool>,
+) {
+    if !follow_path.moves.is_empty() {
+        let time = time::Duration::from_secs_f32(0.1);
+        thread::sleep(time);
+        let window = windows.primary();
+        let border_width = 2.0;
+        let cell_width =
+            (window.width() - border_width * (board.width - 1) as f32) / (board.width as f32);
+        let cell_height =
+            (window.height() - border_width * (board.height - 1) as f32) / (board.height as f32);
 
-    // Segundo passo: executar o algoritmo de A* e determinar o caminho até o destino.
+        let (mut agent, mut transform) = query.get_single_mut().unwrap();
+        let (mx, my) = follow_path.moves.remove(0);
+        if !(mx == 0 && my == 0) {
+            agent.x = (agent.x as i32 + mx) as usize;
+            agent.y = (agent.y as i32 + my) as usize;
 
-    // Terceiro passo: ir até o destino, marcando novos destinos no caminho, mas sem olhar para
-    // esses novos destinos.
+            check_radius(
+                &board,
+                agent.x as i32,
+                agent.y as i32,
+                agent.radius as i32,
+                &mut agent.destination_queue,
+                &query_cell,
+            );
 
-    // Passo final: Repetir primeiro passo até que a lista de destinos esteja vazia.
+            let x = agent.x as f32;
+            let y = agent.y as f32;
+            let cx = -window.width() / 2. + cell_width * x + border_width * x + cell_width / 2.;
+            let cy = -window.height() / 2. + cell_height * y + border_width * y + cell_height / 2.;
+            let translation = &mut transform.translation;
+            translation.x = cx;
+            translation.y = cy;
 
-    let mut weights: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
-    let mut has_option = false;
+            let x = agent.x;
+            let y = agent.y;
+            let mut cell = query_cell.get_mut(board.cells[x][y]).unwrap();
 
-    if agent.x < board.height - 1 {
-        let x = agent.x + 1;
-        let y = agent.y;
-        let cell = query_cell.get(board.cells[x][y]).unwrap();
-        match cell.terrain {
-            Terrain::Grass => {
-                weights[0] = 1.0;
-                has_option = true;
+            match cell.tool {
+                Some(ToolType::Battery) => {
+                    agent.state[0].1 += 1;
+                    println!("Got 1 Battery at {} {}", x, y);
+                    cell.tool = None;
+                }
+                Some(ToolType::WeldingArm) => {
+                    agent.state[1].1 += 1;
+                    println!("Got 1 Welding Arm at {} {}", x, y);
+                    cell.tool = None;
+                }
+                Some(ToolType::SuctionPump) => {
+                    agent.state[2].1 += 1;
+                    println!("Got 1 Suction Pump at {} {}", x, y);
+                    cell.tool = None;
+                }
+                Some(ToolType::CoolingDevice) => {
+                    agent.state[3].1 += 1;
+                    println!("Got 1 Cooling Device at {} {}", x, y);
+                    cell.tool = None;
+                }
+                Some(ToolType::PneumaticArm) => {
+                    agent.state[4].1 += 1;
+                    println!("Got 1 Pneumatic Arm at {} {}", x, y);
+                    cell.tool = None;
+                }
+                None => {}
             }
-            Terrain::Mountain => {
-                weights[0] = 1.0 / 5.0;
-                has_option = true;
+            for mut tool in query_tool.iter_mut() {
+                if tool.x == x && tool.y == y {
+                    tool.tool_type = None;
+                }
             }
-            Terrain::Swamp => {
-                weights[0] = 1.0 / 10.0;
-                has_option = true;
-            }
-            Terrain::Desert => {
-                weights[0] = 1.0 / 20.0;
-                has_option = true;
-            }
-            _ => {}
         }
     }
-    if agent.y < board.width - 1 {
-        let x = agent.x;
-        let y = agent.y + 1;
-        let cell = query_cell.get(board.cells[x][y]).unwrap();
-        match cell.terrain {
-            Terrain::Grass => {
-                weights[1] = 1.0;
-                has_option = true;
-            }
-            Terrain::Mountain => {
-                weights[1] = 1.0 / 5.0;
-                has_option = true;
-            }
-            Terrain::Swamp => {
-                weights[1] = 1.0 / 10.0;
-                has_option = true;
-            }
-            Terrain::Desert => {
-                weights[1] = 1.0 / 20.0;
-                has_option = true;
-            }
-            _ => {}
-        }
-    }
-    if agent.x > 0 {
-        let x = agent.x - 1;
-        let y = agent.y;
-        let cell = query_cell.get(board.cells[x][y]).unwrap();
-        match cell.terrain {
-            Terrain::Grass => {
-                weights[2] = 1.0;
-                has_option = true;
-            }
-            Terrain::Mountain => {
-                weights[2] = 1.0 / 5.0;
-                has_option = true;
-            }
-            Terrain::Swamp => {
-                weights[2] = 1.0 / 10.0;
-                has_option = true;
-            }
-            Terrain::Desert => {
-                weights[2] = 1.0 / 20.0;
-                has_option = true;
-            }
-            _ => {}
-        }
-    }
-    if agent.y > 0 {
-        let x = agent.x;
-        let y = agent.y - 1;
-        let cell = query_cell.get(board.cells[x][y]).unwrap();
-        match cell.terrain {
-            Terrain::Grass => {
-                weights[3] = 1.0;
-                has_option = true;
-            }
-            Terrain::Mountain => {
-                weights[3] = 1.0 / 5.0;
-                has_option = true;
-            }
-            Terrain::Swamp => {
-                weights[3] = 1.0 / 10.0;
-                has_option = true;
-            }
-            Terrain::Desert => {
-                weights[3] = 1.0 / 20.0;
-                has_option = true;
-            }
-            _ => {}
-        }
-    }
-
-    if has_option {
-        let dist = WeightedIndex::new(&weights).unwrap();
-        let mut rng = rand::thread_rng();
-        let movement = moves[dist.sample(&mut rng)];
-        let new_x: usize = (agent.x as i32 + movement.0) as usize;
-        let new_y: usize = (agent.y as i32 + movement.1) as usize;
-        agent.x = new_x;
-        agent.y = new_y;
-    }
-
-    let x = agent.x as f32;
-    let y = agent.y as f32;
-    let cx = -window.width() / 2. + cell_width * x + border_width * x + cell_width / 2.;
-    let cy = -window.height() / 2. + cell_height * y + border_width * y + cell_height / 2.;
-    let translation = &mut transform.translation;
-    translation.x = cx;
-    translation.y = cy;
 }

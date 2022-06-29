@@ -4,6 +4,7 @@ use robozinho::agent::*;
 use robozinho::board::*;
 use robozinho::factory::*;
 use robozinho::params::*;
+use robozinho::path::*;
 use robozinho::tool::*;
 
 fn main() {
@@ -18,6 +19,7 @@ fn main() {
         })
         .add_plugins(DefaultPlugins)
         .init_resource::<Board>()
+        .insert_resource(Path::default())
         .insert_resource(Board::new(42, 42))
         .insert_resource(Params::default())
         .add_startup_system_to_stage(StartupStage::PreStartup, setup_board)
@@ -30,6 +32,7 @@ fn main() {
         .add_system(render_tools)
         .add_system(render_factories)
         .add_system(move_agent)
+        .add_system(follow_path)
         .run();
 }
 
