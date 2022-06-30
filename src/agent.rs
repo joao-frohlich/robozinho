@@ -318,11 +318,20 @@ pub fn move_agent(
                 pq.push((ax, ay, 0, 0), 0);
                 while !pq.is_empty() {
                     let ((cx, cy, mvx, mvy), cost) = pq.pop().unwrap();
-                    if -cost > -final_cost {
+                    if -cost >= -final_cost {
                         continue;
                     }
-                    if partial_cost.contains_key(&(cx, cy)) && cost > partial_cost[&(cx, cy)] {
+                    if partial_cost.contains_key(&(cx, cy)) && -cost >= -partial_cost[&(cx, cy)] {
                         continue;
+                    }
+                    println!("\nGoing from ({}, {}) to ({}, {})", cx, cy, dx, dy);
+                    if path.contains_key(&(cx, cy)) {
+                        println!("Current path: {:?}", path[(&(cx, cy))]);
+                    }
+                    println!("Last move: ({}, {})", mvx, mvy);
+                    println!("Current cost: {}", -cost);
+                    if partial_cost.contains_key(&(cx, cy)) {
+                        println!("Partial cost: {}", -partial_cost[&(cx, cy)]);
                     }
                     partial_cost.remove(&(cx, cy));
                     partial_cost.insert((cx, cy), cost);
@@ -341,7 +350,9 @@ pub fn move_agent(
                         continue;
                     }
                     for (mx, my) in moves {
-                        let (nx, ny) = (cx + mx, cy + my);
+                        let mxx = mx;
+                        let myy = my;
+                        let (nx, ny) = (cx + mxx, cy + myy);
                         if !valid(nx, ny, width, height) {
                             continue;
                         }
@@ -357,17 +368,19 @@ pub fn move_agent(
                         };
                         let n_cost = cost - g - h((nx, ny), (dx as i32, dy as i32));
                         if partial_cost.contains_key(&(nx, ny))
-                            && -n_cost > -partial_cost[&(nx, ny)]
+                            && -n_cost >= -partial_cost[&(nx, ny)]
                         {
                             continue;
                         }
-                        path.remove(&(nx, ny));
+                        if path.contains_key(&(nx, ny)) {
+                            path.remove(&(nx, ny));
+                        }
                         let mut partial_path: Vec<(i32, i32)> = vec![];
                         for (xx, yy) in &path[&(cx, cy)] {
                             partial_path.push((*xx, *yy));
                         }
                         path.insert((nx, ny), partial_path);
-                        pq.push((nx, ny, mx, my), n_cost);
+                        pq.push((nx, ny, mxx, myy), n_cost);
                     }
                 }
                 //Agora precisamos pegar o caminho de "menor" custo
@@ -376,10 +389,12 @@ pub fn move_agent(
                 }
 
                 println!(
-                    "Distancia entre ({}, {}) e ({}, {}): {}",
+                    "\nDistance between ({}, {}) and ({}, {}): {}",
                     ax, ay, dx, dy, -final_cost
                 );
-                println!("Caminho: {:?}", path[&(dx as i32, dy as i32)]);
+                println!("Path: {:?}", path[&(dx as i32, dy as i32)]);
+                // let time = time::Duration::from_secs_f32(15.0);
+                // thread::sleep(time);
             }
         } else {
             let mut weights: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
