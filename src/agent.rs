@@ -17,6 +17,10 @@ pub struct Agent {
     x: usize,
     y: usize,
     radius: usize,
+    cost: usize,
+    expansions: usize,
+    last_move: (i32, i32),
+    ended: bool,
     state: Vec<(ToolType, usize)>,
     requisitions: Vec<Factory>,
     destination_queue: Vec<(usize, usize)>,
@@ -79,6 +83,10 @@ pub fn setup_agent(
                                 x: x,
                                 y: y,
                                 radius: params.agent_radius,
+                                cost: 0,
+                                expansions: 0,
+                                last_move: (0, 0),
+                                ended: false,
                                 state: vec![
                                     (ToolType::Battery, 0),
                                     (ToolType::WeldingArm, 0),
@@ -148,7 +156,7 @@ pub fn check_radius(
     }
 }
 
-pub fn check_requisitions(agent: &mut Agent) {
+pub fn check_requisitions(agent: &mut Agent) -> bool {
     let mut batteries: usize = 0;
     let mut welding_arms: usize = 0;
     let mut pumps: usize = 0;
@@ -174,6 +182,8 @@ pub fn check_requisitions(agent: &mut Agent) {
             }
         }
     }
+
+    let mut ret = 0;
 
     for factory in &agent.requisitions {
         let (x, y) = (factory.x, factory.y);
@@ -206,9 +216,12 @@ pub fn check_requisitions(agent: &mut Agent) {
                     agent.destination_queue.push((x, y));
                 }
             }
-            None => {}
+            None => {
+                ret += 1;
+            }
         }
     }
+    ret == agent.requisitions.len()
 }
 
 fn h((ax, ay): (i32, i32), (bx, by): (i32, i32)) -> i32 {
@@ -271,7 +284,7 @@ pub fn move_agent(
 ) {
     if follow_path.moves.is_empty() {
         let time = time::Duration::from_secs_f32(0.1);
-        thread::sleep(time);
+        // thread::sleep(time);
 
         let moves: [(i32, i32); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
 
@@ -284,7 +297,15 @@ pub fn move_agent(
 
         let (mut agent, mut transform) = query.get_single_mut().unwrap();
 
-        check_requisitions(&mut agent);
+        if check_requisitions(&mut agent) {
+            if !agent.ended {
+                println!("End of execution");
+                println!("Final cost: {}", agent.cost);
+                println!("Number of expansions: {}", agent.expansions);
+                agent.ended = true;
+            }
+            return;
+        }
 
         let mut requisitions: Vec<Factory> = vec![];
         for requisition in &agent.requisitions {
@@ -381,7 +402,7 @@ pub fn move_agent(
                     //     Some(mut v) => {
                     //         v.push((mvx, mvy));
                     //         path.insert((cx, cy), v);
-                    //     }
+                    //     }usize
                     //     None => {
                     //         let v = vec![(mvx, mvy)];
                     //         path.insert((cx, cy), v);
@@ -389,8 +410,12 @@ pub fn move_agent(
                     // }
                     if cx == dx as i32 && cy == dy as i32 {
                         final_cost = cost;
-                        continue;
+                        while !pq.is_empty() {
+                            pq.pop();
+                        }
+                        break;
                     }
+                    agent.expansions += 1;
                     for (mx, my) in moves {
                         let mxx = mx;
                         let myy = my;
@@ -446,13 +471,14 @@ pub fn move_agent(
                 // thread::sleep(time);
             }
         } else {
+            println!("Last move was: {:?}", agent.last_move);
             let mut weights: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
             let mut has_option = false;
             let mountain_cost = 5.0;
             let swamp_cost = 10.0;
             let desert_cost = 20.0;
 
-            if agent.x < board.height - 1 {
+            if agent.x < board.height - 1 && agent.last_move != moves[0] {
                 let x = agent.x + 1;
                 let y = agent.y;
                 let cell = query_cell.get(board.cells[x][y]).unwrap();
@@ -476,7 +502,7 @@ pub fn move_agent(
                     _ => {}
                 }
             }
-            if agent.y < board.width - 1 {
+            if agent.y < board.width - 1 && agent.last_move != moves[1] {
                 let x = agent.x;
                 let y = agent.y + 1;
                 let cell = query_cell.get(board.cells[x][y]).unwrap();
@@ -500,7 +526,7 @@ pub fn move_agent(
                     _ => {}
                 }
             }
-            if agent.x > 0 {
+            if agent.x > 0 && agent.last_move != moves[2] {
                 let x = agent.x - 1;
                 let y = agent.y;
                 let cell = query_cell.get(board.cells[x][y]).unwrap();
@@ -524,7 +550,7 @@ pub fn move_agent(
                     _ => {}
                 }
             }
-            if agent.y > 0 {
+            if agent.y > 0 && agent.last_move != moves[3] {
                 let x = agent.x;
                 let y = agent.y - 1;
                 let cell = query_cell.get(board.cells[x][y]).unwrap();
@@ -553,10 +579,21 @@ pub fn move_agent(
                 let dist = WeightedIndex::new(&weights).unwrap();
                 let mut rng = rand::thread_rng();
                 let movement = moves[dist.sample(&mut rng)];
+                agent.last_move = movement;
+                agent.last_move.0 *= -1;
+                agent.last_move.1 *= -1;
                 let new_x: usize = (agent.x as i32 + movement.0) as usize;
                 let new_y: usize = (agent.y as i32 + movement.1) as usize;
                 agent.x = new_x;
                 agent.y = new_y;
+                let cell = query_cell.get(board.cells[new_x][new_y]).unwrap();
+                agent.cost += match cell.terrain {
+                    Terrain::Grass => 1,
+                    Terrain::Mountain => 5,
+                    Terrain::Swamp => 10,
+                    Terrain::Desert => 20,
+                    Terrain::Obstacle => 1e9 as usize,
+                };
             }
 
             let x = agent.x as f32;
@@ -582,7 +619,7 @@ pub fn follow_path(
     if !follow_path.moves.is_empty() {
         println!("Current follow path size: {}", follow_path.moves.len());
         let time = time::Duration::from_secs_f32(0.1);
-        thread::sleep(time);
+        // thread::sleep(time);
         let window = windows.primary();
         let border_width = 2.0;
         let cell_width =
@@ -622,6 +659,14 @@ pub fn follow_path(
             let x = agent.x;
             let y = agent.y;
             let mut cell = query_cell.get_mut(board.cells[x][y]).unwrap();
+
+            agent.cost += match cell.terrain {
+                Terrain::Grass => 1,
+                Terrain::Mountain => 5,
+                Terrain::Swamp => 10,
+                Terrain::Desert => 20,
+                Terrain::Obstacle => 1e9 as usize,
+            };
 
             match cell.tool {
                 Some(ToolType::Battery) => {
