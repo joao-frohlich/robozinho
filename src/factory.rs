@@ -6,7 +6,7 @@ use crate::tool::*;
 use bevy::prelude::*;
 use rand::distributions::{Distribution, Uniform};
 
-#[derive(Clone, Copy, Component)]
+#[derive(Clone, Copy, Component, Debug)]
 pub struct Factory {
     pub x: usize,
     pub y: usize,
@@ -93,9 +93,10 @@ pub fn spawn_factories(
 
 pub fn render_factories(
     asset_server: Res<AssetServer>,
-    mut query: Query<(&Factory, &mut Handle<Image>), Changed<Factory>>,
+    mut query: Query<(&Factory, &mut Handle<Image>)>,
 ) {
     for (factory, mut image_handle) in query.iter_mut() {
+        // println!("Factory: {:?}", factory);
         match factory.needed_tool {
             Some(ToolType::Battery) => *image_handle = asset_server.load("battery_factory.png"),
             Some(ToolType::WeldingArm) => *image_handle = asset_server.load("welding_factory.png"),

@@ -5,7 +5,7 @@ use crate::terrain::Terrain;
 use bevy::prelude::*;
 use rand::distributions::{Distribution, Uniform};
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum ToolType {
     Battery,
     WeldingArm,

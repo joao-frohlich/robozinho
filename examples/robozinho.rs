@@ -33,6 +33,7 @@ fn main() {
         .add_system(render_factories)
         .add_system(move_agent)
         .add_system(follow_path)
+        .add_system(update_agent_factories)
         .run();
 }
 

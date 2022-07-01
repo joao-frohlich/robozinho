@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use priority_queue::PriorityQueue;
 use rand::distributions::WeightedIndex;
 use rand::distributions::{Distribution, Uniform};
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::{thread, time};
 
 #[derive(Default, Component)]
@@ -104,12 +104,26 @@ pub fn setup_agent_factories(mut query: Query<&mut Agent>, query_factories: Quer
     }
 }
 
+pub fn update_agent_factories(query: Query<&Agent>, mut query_factories: Query<&mut Factory>) {
+    let agent = query.get_single().unwrap();
+    for mut factory in query_factories.iter_mut() {
+        let (x, y) = (factory.x, factory.y);
+        for fact in &agent.requisitions {
+            if x == fact.x && y == fact.y {
+                factory.needed_tool = fact.needed_tool;
+                factory.quantity = fact.quantity;
+            }
+        }
+    }
+}
+
 pub fn check_radius(
     board: &Res<Board>,
     ax: i32,
     ay: i32,
     r: i32,
     destinations: &mut Vec<(usize, usize)>,
+    requisitions: &Vec<Factory>,
     query_cell: &Query<&mut Cell>,
 ) {
     let width = board.width as i32;
@@ -122,8 +136,10 @@ pub fn check_radius(
                 }
                 let cell = query_cell.get(board.cells[x as usize][y as usize]).unwrap();
                 match cell.tool {
-                    Some(_) => {
-                        destinations.push((x as usize, y as usize));
+                    Some(tool) => {
+                        if search_requisition(tool, &requisitions) {
+                            destinations.push((x as usize, y as usize));
+                        }
                     }
                     None => {}
                 }
@@ -200,6 +216,8 @@ fn h((ax, ay): (i32, i32), (bx, by): (i32, i32)) -> i32 {
 }
 
 fn check_next_destination(agent: &Agent) -> usize {
+    println!("\nChecking next destination");
+    println!("Current destination queue: {:?}", agent.destination_queue);
     let mut min_distance: usize = 1000000000;
     let mut idx: usize = 0;
     let mut min_idx: usize = 0;
@@ -211,11 +229,15 @@ fn check_next_destination(agent: &Agent) -> usize {
         }
         idx += 1;
     }
+    println!(
+        "My next destination is: {:?}",
+        agent.destination_queue[min_idx]
+    );
     min_idx
 }
 
-fn search_requisition(tool_type: ToolType, agent: &Agent) -> bool {
-    for factory in &agent.requisitions {
+fn search_requisition(tool_type: ToolType, requisitions: &Vec<Factory>) -> bool {
+    for factory in requisitions {
         if factory.needed_tool == Some(tool_type) {
             return true;
         }
@@ -262,7 +284,12 @@ pub fn move_agent(
 
         let (mut agent, mut transform) = query.get_single_mut().unwrap();
 
-        // check_requisitions(&mut agent);
+        check_requisitions(&mut agent);
+
+        let mut requisitions: Vec<Factory> = vec![];
+        for requisition in &agent.requisitions {
+            requisitions.push(*requisition);
+        }
 
         check_radius(
             &board,
@@ -270,6 +297,7 @@ pub fn move_agent(
             agent.y as i32,
             agent.radius as i32,
             &mut agent.destination_queue,
+            &requisitions,
             &query_cell,
         );
 
@@ -283,32 +311,46 @@ pub fn move_agent(
         if agent.destination_queue.len() > 0 {
             let next_idx = check_next_destination(&agent);
             let (dx, dy) = agent.destination_queue.remove(next_idx);
+            println!("Finding path to ({}, {})", dx, dy);
+            println!(
+                "Current destination queue is: {:?}",
+                agent.destination_queue
+            );
             let cell = query_cell.get(board.cells[dx][dy]).unwrap();
             let mut should_find_path = true;
             match cell.tool {
                 Some(ToolType::Battery) => {
-                    should_find_path = search_requisition(ToolType::Battery, &agent)
+                    should_find_path = search_requisition(ToolType::Battery, &agent.requisitions)
                 }
                 Some(ToolType::WeldingArm) => {
-                    should_find_path = search_requisition(ToolType::WeldingArm, &agent)
+                    should_find_path = search_requisition(ToolType::WeldingArm, &agent.requisitions)
                 }
                 Some(ToolType::SuctionPump) => {
-                    should_find_path = search_requisition(ToolType::SuctionPump, &agent)
+                    should_find_path =
+                        search_requisition(ToolType::SuctionPump, &agent.requisitions)
                 }
                 Some(ToolType::CoolingDevice) => {
-                    should_find_path = search_requisition(ToolType::CoolingDevice, &agent)
+                    should_find_path =
+                        search_requisition(ToolType::CoolingDevice, &agent.requisitions)
                 }
                 Some(ToolType::PneumaticArm) => {
-                    should_find_path = search_requisition(ToolType::PneumaticArm, &agent)
+                    should_find_path =
+                        search_requisition(ToolType::PneumaticArm, &agent.requisitions)
                 }
-                None => {
-                    match cell.factory {
+                None => match cell.factory {
+                    Some(factory) => match factory.needed_tool {
                         Some(_) => {}
-                        None => {should_find_path = false}
-                    }
-                }
+                        None => should_find_path = false,
+                    },
+                    None => should_find_path = false,
+                },
             }
-            
+
+            println!(
+                "Should I find a path to ({}, {}): {}",
+                dx, dy, should_find_path
+            );
+
             if should_find_path {
                 let (ax, ay) = (agent.x as i32, agent.y as i32);
                 let mut pq = PriorityQueue::new();
@@ -335,16 +377,16 @@ pub fn move_agent(
                     }
                     partial_cost.remove(&(cx, cy));
                     partial_cost.insert((cx, cy), cost);
-                    match path.remove(&(cx, cy)) {
-                        Some(mut v) => {
-                            v.push((mvx, mvy));
-                            path.insert((cx, cy), v);
-                        }
-                        None => {
-                            let v = vec![(mvx, mvy)];
-                            path.insert((cx, cy), v);
-                        }
-                    }
+                    // match path.remove(&(cx, cy)) {
+                    //     Some(mut v) => {
+                    //         v.push((mvx, mvy));
+                    //         path.insert((cx, cy), v);
+                    //     }
+                    //     None => {
+                    //         let v = vec![(mvx, mvy)];
+                    //         path.insert((cx, cy), v);
+                    //     }
+                    // }
                     if cx == dx as i32 && cy == dy as i32 {
                         final_cost = cost;
                         continue;
@@ -376,23 +418,30 @@ pub fn move_agent(
                             path.remove(&(nx, ny));
                         }
                         let mut partial_path: Vec<(i32, i32)> = vec![];
-                        for (xx, yy) in &path[&(cx, cy)] {
-                            partial_path.push((*xx, *yy));
+                        if path.contains_key(&(cx, cy)) {
+                            for (xx, yy) in &path[&(cx, cy)] {
+                                partial_path.push((*xx, *yy));
+                            }
                         }
+                        partial_path.push((mxx, myy));
                         path.insert((nx, ny), partial_path);
                         pq.push((nx, ny, mxx, myy), n_cost);
                     }
                 }
                 //Agora precisamos pegar o caminho de "menor" custo
-                for (mx, my) in &path[&(dx as i32, dy as i32)] {
-                    follow_path.moves.push((*mx, *my));
-                }
-
                 println!(
                     "\nDistance between ({}, {}) and ({}, {}): {}",
                     ax, ay, dx, dy, -final_cost
                 );
-                println!("Path: {:?}", path[&(dx as i32, dy as i32)]);
+                if path.contains_key(&(dx as i32, dy as i32)) {
+                    for (mx, my) in &path[&(dx as i32, dy as i32)] {
+                        follow_path.moves.push((*mx, *my));
+                    }
+                    println!("Path: {:?}", path[&(dx as i32, dy as i32)]);
+                } else {
+                    follow_path.moves.push((0, 0));
+                }
+
                 // let time = time::Duration::from_secs_f32(15.0);
                 // thread::sleep(time);
             }
@@ -531,6 +580,7 @@ pub fn follow_path(
     mut query_tool: Query<&mut Tool>,
 ) {
     if !follow_path.moves.is_empty() {
+        println!("Current follow path size: {}", follow_path.moves.len());
         let time = time::Duration::from_secs_f32(0.1);
         thread::sleep(time);
         let window = windows.primary();
@@ -546,12 +596,18 @@ pub fn follow_path(
             agent.x = (agent.x as i32 + mx) as usize;
             agent.y = (agent.y as i32 + my) as usize;
 
+            let mut requisitions: Vec<Factory> = vec![];
+            for requisition in &agent.requisitions {
+                requisitions.push(*requisition);
+            }
+
             check_radius(
                 &board,
                 agent.x as i32,
                 agent.y as i32,
                 agent.radius as i32,
                 &mut agent.destination_queue,
+                &requisitions,
                 &query_cell,
             );
 
@@ -599,6 +655,110 @@ pub fn follow_path(
                 if tool.x == x && tool.y == y {
                     tool.tool_type = None;
                 }
+            }
+            match cell.factory {
+                Some(mut factory) => {
+                    let mut batteries = 0;
+                    let mut welding_arms = 0;
+                    let mut pumps = 0;
+                    let mut cooling_devices = 0;
+                    let mut pneumatic_arms = 0;
+                    for (tool_type, quantity) in &agent.state {
+                        match tool_type {
+                            ToolType::Battery => {
+                                batteries = *quantity;
+                            }
+                            ToolType::WeldingArm => {
+                                welding_arms = *quantity;
+                            }
+                            ToolType::SuctionPump => {
+                                pumps = *quantity;
+                            }
+                            ToolType::CoolingDevice => {
+                                cooling_devices = *quantity;
+                            }
+                            ToolType::PneumaticArm => {
+                                pneumatic_arms = *quantity;
+                            }
+                        }
+                    }
+                    let fx = factory.x;
+                    let fy = factory.y;
+                    match factory.needed_tool {
+                        Some(ToolType::Battery) => {
+                            if batteries >= factory.quantity {
+                                println!("Drop {} batteries at ({} {})", factory.quantity, fx, fy);
+                                agent.state[0].1 -= factory.quantity;
+                                factory.quantity = 0;
+                                factory.needed_tool = None;
+                            }
+                        }
+                        Some(ToolType::WeldingArm) => {
+                            if welding_arms >= factory.quantity {
+                                println!(
+                                    "Drop {} welding arms at ({} {})",
+                                    factory.quantity, fx, fy
+                                );
+                                agent.state[1].1 -= factory.quantity;
+                                factory.quantity = 0;
+                                factory.needed_tool = None;
+                            }
+                        }
+                        Some(ToolType::SuctionPump) => {
+                            if pumps >= factory.quantity {
+                                println!(
+                                    "Drop {} suction pumps at ({} {})",
+                                    factory.quantity, fx, fy
+                                );
+                                agent.state[2].1 -= factory.quantity;
+                                factory.quantity = 0;
+                                factory.needed_tool = None;
+                            }
+                        }
+                        Some(ToolType::CoolingDevice) => {
+                            if cooling_devices >= factory.quantity {
+                                println!(
+                                    "Drop {} cooling devices at ({} {})",
+                                    factory.quantity, fx, fy
+                                );
+                                agent.state[3].1 -= factory.quantity;
+                                factory.quantity = 0;
+                                factory.needed_tool = None;
+                            }
+                        }
+                        Some(ToolType::PneumaticArm) => {
+                            if pneumatic_arms >= factory.quantity {
+                                println!(
+                                    "Drop {} pneumatic arms at ({} {})",
+                                    factory.quantity, fx, fy
+                                );
+                                agent.state[4].1 -= factory.quantity;
+                                factory.quantity = 0;
+                                factory.needed_tool = None;
+                            }
+                        }
+                        None => {}
+                    }
+                    if agent.destination_queue.contains(&(fx, fy)) {
+                        let mut idx = 0;
+                        for (dx, dy) in &agent.destination_queue {
+                            if *dx == fx && *dy == fy {
+                                break;
+                            }
+                            idx += 1;
+                        }
+                        agent.destination_queue.remove(idx);
+                    }
+                    for fact in &mut agent.requisitions {
+                        let fxx = fact.x;
+                        let fyy = fact.y;
+                        if fx == fxx && fy == fyy {
+                            fact.needed_tool = None;
+                            fact.quantity = 0;
+                        }
+                    }
+                }
+                None => {}
             }
         }
     }
