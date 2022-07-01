@@ -19,6 +19,7 @@ pub struct Agent {
     radius: usize,
     cost: usize,
     expansions: usize,
+    random_moves: usize,
     last_move: (i32, i32),
     ended: bool,
     state: Vec<(ToolType, usize)>,
@@ -85,6 +86,7 @@ pub fn setup_agent(
                                 radius: params.agent_radius,
                                 cost: 0,
                                 expansions: 0,
+                                random_moves: 0,
                                 last_move: (0, 0),
                                 ended: false,
                                 state: vec![
@@ -302,6 +304,7 @@ pub fn move_agent(
                 println!("End of execution");
                 println!("Final cost: {}", agent.cost);
                 println!("Number of expansions: {}", agent.expansions);
+                println!("Random moves: {}", agent.random_moves);
                 agent.ended = true;
             }
             return;
@@ -587,13 +590,7 @@ pub fn move_agent(
                 agent.x = new_x;
                 agent.y = new_y;
                 let cell = query_cell.get(board.cells[new_x][new_y]).unwrap();
-                agent.cost += match cell.terrain {
-                    Terrain::Grass => 1,
-                    Terrain::Mountain => 5,
-                    Terrain::Swamp => 10,
-                    Terrain::Desert => 20,
-                    Terrain::Obstacle => 1e9 as usize,
-                };
+                agent.random_moves += 1;
             }
 
             let x = agent.x as f32;
