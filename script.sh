@@ -16,5 +16,5 @@ do
     echo "      Guloso"
     cargo run --example robozinho_guloso $i --release > outputs/guloso_$i.txt
     echo "      Dijkstra"
-    cargo run --example robozinho_determinista $i --release > outputs/determinista_$i.txt
+    cargo run --example robozinho_uniforme $i --release > outputs/uniforme_$i.txt
 done
