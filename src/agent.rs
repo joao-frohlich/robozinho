@@ -7,10 +7,10 @@ use crate::terrain::Terrain;
 use crate::tool::*;
 use bevy::prelude::*;
 use priority_queue::PriorityQueue;
+use rand::distributions::Distribution;
 use rand::distributions::WeightedIndex;
-use rand::distributions::{Distribution, Uniform};
 use std::collections::HashMap;
-use std::{thread, time};
+use std::fs;
 
 #[derive(Default, Component)]
 pub struct Agent {
@@ -20,11 +20,29 @@ pub struct Agent {
     cost: usize,
     expansions: usize,
     random_moves: usize,
+    random_moves_cost: usize,
     last_move: (i32, i32),
     ended: bool,
     state: Vec<(ToolType, usize)>,
     requisitions: Vec<Factory>,
     destination_queue: Vec<(usize, usize)>,
+}
+
+fn read_agent(idx: usize) -> Vec<(usize, usize)> {
+    let mut data: Vec<(usize, usize)> = Vec::<(usize, usize)>::default();
+    let field_path = "inputs/agent_".to_string() + &idx.to_string();
+    let contents = fs::read_to_string(field_path).expect("Something went wrong");
+    for line in contents.split('\n') {
+        let values: Vec<&str> = line.split_whitespace().collect();
+        if values.len() != 2 {
+            break;
+        }
+        let x = values[0].parse::<usize>().unwrap();
+        let y = values[1].parse::<usize>().unwrap();
+        println!("{} {}", x, y);
+        data.push((x, y));
+    }
+    data
 }
 
 pub fn setup_agent(
@@ -44,14 +62,13 @@ pub fn setup_agent(
     let cell_height =
         (window.height() - border_width * (board.height - 1) as f32) / (board.height as f32);
 
-    let between_width = Uniform::from(0..board.width);
-    let between_height = Uniform::from(0..board.height);
-    let mut rng = rand::thread_rng();
+    let mut idx: usize = 0;
+    let agent_positions = read_agent(params.input_idx);
 
     let mut cont = 0;
     while cont < 1 {
-        let x = between_width.sample(&mut rng);
-        let y = between_height.sample(&mut rng);
+        let (x, y) = agent_positions[idx];
+        idx += 1;
         let cell = query.get_mut(board.cells[x][y]).unwrap();
         match cell.terrain {
             Terrain::Obstacle => {}
@@ -87,6 +104,7 @@ pub fn setup_agent(
                                 cost: 0,
                                 expansions: 0,
                                 random_moves: 0,
+                                random_moves_cost: 0,
                                 last_move: (0, 0),
                                 ended: false,
                                 state: vec![
@@ -281,14 +299,18 @@ pub fn move_agent(
     board: Res<Board>,
     mut follow_path: ResMut<Path>,
     mut query: Query<(&mut Agent, &mut Transform)>,
-    query_cell: Query<&mut Cell>,
-    mut _params: ResMut<Params>,
+    mut query_cell: Query<&mut Cell>,
+    mut query_tool: Query<&mut Tool>,
+    params: Res<Params>,
 ) {
     if follow_path.moves.is_empty() {
-        let time = time::Duration::from_secs_f32(0.1);
+        // let time = time::Duration::from_secs_f32(0.1);
         // thread::sleep(time);
 
         let moves: [(i32, i32); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+
+        let g_factor = params.g_factor;
+        let h_factor = params.h_factor;
 
         let window = windows.primary();
         let border_width = 2.0;
@@ -299,12 +321,49 @@ pub fn move_agent(
 
         let (mut agent, mut transform) = query.get_single_mut().unwrap();
 
+        let mut cell = query_cell.get_mut(board.cells[agent.x][agent.y]).unwrap();
+
+        match cell.tool {
+            Some(ToolType::Battery) => {
+                agent.state[0].1 += 1;
+                println!("Got 1 Battery at {} {}", agent.x, agent.y);
+                cell.tool = None;
+            }
+            Some(ToolType::WeldingArm) => {
+                agent.state[1].1 += 1;
+                println!("Got 1 Welding Arm at {} {}", agent.x, agent.y);
+                cell.tool = None;
+            }
+            Some(ToolType::SuctionPump) => {
+                agent.state[2].1 += 1;
+                println!("Got 1 Suction Pump at {} {}", agent.x, agent.y);
+                cell.tool = None;
+            }
+            Some(ToolType::CoolingDevice) => {
+                agent.state[3].1 += 1;
+                println!("Got 1 Cooling Device at {} {}", agent.x, agent.y);
+                cell.tool = None;
+            }
+            Some(ToolType::PneumaticArm) => {
+                agent.state[4].1 += 1;
+                println!("Got 1 Pneumatic Arm at {} {}", agent.x, agent.y);
+                cell.tool = None;
+            }
+            None => {}
+        }
+        for mut tool in query_tool.iter_mut() {
+            if tool.x == agent.x && tool.y == agent.y {
+                tool.tool_type = None;
+            }
+        }
+
         if check_requisitions(&mut agent) {
             if !agent.ended {
-                println!("End of execution");
+                println!("\n\nEnd of execution");
                 println!("Final cost: {}", agent.cost);
                 println!("Number of expansions: {}", agent.expansions);
                 println!("Random moves: {}", agent.random_moves);
+                println!("Random moves cost: {}", agent.random_moves_cost);
                 agent.ended = true;
             }
             return;
@@ -336,10 +395,6 @@ pub fn move_agent(
             let next_idx = check_next_destination(&agent);
             let (dx, dy) = agent.destination_queue.remove(next_idx);
             println!("Finding path to ({}, {})", dx, dy);
-            println!(
-                "Current destination queue is: {:?}",
-                agent.destination_queue
-            );
             let cell = query_cell.get(board.cells[dx][dy]).unwrap();
             let mut should_find_path = true;
             match cell.tool {
@@ -436,7 +491,8 @@ pub fn move_agent(
                             Terrain::Desert => 20,
                             Terrain::Obstacle => -1,
                         };
-                        let n_cost = cost - g - h((nx, ny), (dx as i32, dy as i32));
+                        let n_cost =
+                            cost - g * g_factor - h((nx, ny), (dx as i32, dy as i32)) * h_factor;
                         if partial_cost.contains_key(&(nx, ny))
                             && -n_cost >= -partial_cost[&(nx, ny)]
                         {
@@ -474,7 +530,6 @@ pub fn move_agent(
                 // thread::sleep(time);
             }
         } else {
-            println!("Last move was: {:?}", agent.last_move);
             let mut weights: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
             let mut has_option = false;
             let mountain_cost = 5.0;
@@ -589,7 +644,16 @@ pub fn move_agent(
                 let new_y: usize = (agent.y as i32 + movement.1) as usize;
                 agent.x = new_x;
                 agent.y = new_y;
+                println!("\nRandom move: ({} {})", movement.0, movement.1);
+                println!("Agent randomly moved to: ({} {})", agent.x, agent.y);
                 let cell = query_cell.get(board.cells[new_x][new_y]).unwrap();
+                agent.random_moves_cost += match cell.terrain {
+                    Terrain::Grass => 1,
+                    Terrain::Mountain => 5,
+                    Terrain::Swamp => 10,
+                    Terrain::Desert => 20,
+                    Terrain::Obstacle => 1e9 as usize,
+                };
                 agent.random_moves += 1;
             }
 
@@ -610,12 +674,10 @@ pub fn follow_path(
     mut follow_path: ResMut<Path>,
     mut query: Query<(&mut Agent, &mut Transform)>,
     mut query_cell: Query<&mut Cell>,
-    mut _params: ResMut<Params>,
     mut query_tool: Query<&mut Tool>,
 ) {
     if !follow_path.moves.is_empty() {
-        println!("Current follow path size: {}", follow_path.moves.len());
-        let time = time::Duration::from_secs_f32(0.1);
+        // let time = time::Duration::from_secs_f32(0.1);
         // thread::sleep(time);
         let window = windows.primary();
         let border_width = 2.0;
@@ -625,10 +687,14 @@ pub fn follow_path(
             (window.height() - border_width * (board.height - 1) as f32) / (board.height as f32);
 
         let (mut agent, mut transform) = query.get_single_mut().unwrap();
+        println!("\nCurrent agent position: ({}, {})", agent.x, agent.y);
+        println!("Current follow path size: {}", follow_path.moves.len());
         let (mx, my) = follow_path.moves.remove(0);
+        println!("Current movement: ({} {})", mx, my);
         if !(mx == 0 && my == 0) {
             agent.x = (agent.x as i32 + mx) as usize;
             agent.y = (agent.y as i32 + my) as usize;
+            println!("New agent position: ({} {})", agent.x, agent.y);
 
             let mut requisitions: Vec<Factory> = vec![];
             for requisition in &agent.requisitions {
@@ -657,6 +723,15 @@ pub fn follow_path(
             let y = agent.y;
             let mut cell = query_cell.get_mut(board.cells[x][y]).unwrap();
 
+            print!("Terrain at position ({} {}): ", x, y);
+            match cell.terrain {
+                Terrain::Grass => println!("Grass"),
+                Terrain::Mountain => println!("Mountain"),
+                Terrain::Swamp => println!("Swamp"),
+                Terrain::Desert => println!("Desert"),
+                Terrain::Obstacle => println!("Obstacle"),
+            }
+
             agent.cost += match cell.terrain {
                 Terrain::Grass => 1,
                 Terrain::Mountain => 5,
@@ -668,27 +743,27 @@ pub fn follow_path(
             match cell.tool {
                 Some(ToolType::Battery) => {
                     agent.state[0].1 += 1;
-                    println!("Got 1 Battery at {} {}", x, y);
+                    println!("Found 1 Battery at {} {}", x, y);
                     cell.tool = None;
                 }
                 Some(ToolType::WeldingArm) => {
                     agent.state[1].1 += 1;
-                    println!("Got 1 Welding Arm at {} {}", x, y);
+                    println!("Found 1 Welding Arm at {} {}", x, y);
                     cell.tool = None;
                 }
                 Some(ToolType::SuctionPump) => {
                     agent.state[2].1 += 1;
-                    println!("Got 1 Suction Pump at {} {}", x, y);
+                    println!("Found 1 Suction Pump at {} {}", x, y);
                     cell.tool = None;
                 }
                 Some(ToolType::CoolingDevice) => {
                     agent.state[3].1 += 1;
-                    println!("Got 1 Cooling Device at {} {}", x, y);
+                    println!("Found 1 Cooling Device at {} {}", x, y);
                     cell.tool = None;
                 }
                 Some(ToolType::PneumaticArm) => {
                     agent.state[4].1 += 1;
-                    println!("Got 1 Pneumatic Arm at {} {}", x, y);
+                    println!("Found 1 Pneumatic Arm at {} {}", x, y);
                     cell.tool = None;
                 }
                 None => {}

@@ -21,7 +21,26 @@ fn main() {
         .init_resource::<Board>()
         .insert_resource(Path::default())
         .insert_resource(Board::new(42, 42))
-        .insert_resource(Params::default())
+        .insert_resource(Params::new(
+            vec![
+                (ToolType::Battery, 20),
+                (ToolType::WeldingArm, 10),
+                (ToolType::SuctionPump, 8),
+                (ToolType::CoolingDevice, 6),
+                (ToolType::PneumaticArm, 4),
+            ],
+            vec![
+                (ToolType::Battery, 8),
+                (ToolType::WeldingArm, 5),
+                (ToolType::SuctionPump, 2),
+                (ToolType::CoolingDevice, 5),
+                (ToolType::PneumaticArm, 2),
+            ],
+            4,
+            1,
+            1,
+            1,
+        ))
         .add_startup_system_to_stage(StartupStage::PreStartup, setup_board)
         .add_startup_system(setup_camera)
         .add_startup_system(color_cells)

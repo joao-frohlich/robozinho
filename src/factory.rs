@@ -4,7 +4,7 @@ use crate::params::Params;
 use crate::terrain::Terrain;
 use crate::tool::*;
 use bevy::prelude::*;
-use rand::distributions::{Distribution, Uniform};
+use std::fs;
 
 #[derive(Clone, Copy, Component, Debug)]
 pub struct Factory {
@@ -25,6 +25,23 @@ impl Factory {
     }
 }
 
+fn read_factories(idx: usize) -> Vec<(usize, usize)> {
+    let mut data: Vec<(usize, usize)> = Vec::<(usize, usize)>::default();
+    let field_path = "inputs/factories_".to_string() + &idx.to_string();
+    let contents = fs::read_to_string(field_path).expect("Something went wrong");
+    for line in contents.split('\n') {
+        let values: Vec<&str> = line.split_whitespace().collect();
+        if values.len() != 2 {
+            break;
+        }
+        let x = values[0].parse::<usize>().unwrap();
+        let y = values[1].parse::<usize>().unwrap();
+        println!("{} {}", x, y);
+        data.push((x, y));
+    }
+    data
+}
+
 pub fn spawn_factories(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -42,15 +59,14 @@ pub fn spawn_factories(
     let cell_height =
         (window.height() - border_width * (board.height - 1) as f32) / (board.height as f32);
 
-    let between_width = Uniform::from(0..board.width);
-    let between_height = Uniform::from(0..board.height);
-    let mut rng = rand::thread_rng();
+    let mut idx: usize = 0;
+    let factories_positions = read_factories(params.input_idx);
 
     for (needed_tool, quantity) in &params.factories_needs {
         let mut cont = 0;
         while cont < 1 {
-            let x = between_width.sample(&mut rng);
-            let y = between_height.sample(&mut rng);
+            let (x, y) = factories_positions[idx];
+            idx += 1;
             let mut cell = query.get_mut(board.cells[x][y]).unwrap();
             match cell.terrain {
                 Terrain::Obstacle => {}
