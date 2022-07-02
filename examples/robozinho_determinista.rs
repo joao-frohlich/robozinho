@@ -6,8 +6,11 @@ use robozinho::factory::*;
 use robozinho::params::*;
 use robozinho::path::*;
 use robozinho::tool::*;
+use std::env;
 
 fn main() {
+    let args: Vec<String> = env::args().collect();
+    let input_idx = &args[1].parse::<usize>().unwrap();
     App::new()
         .insert_resource(WindowDescriptor {
             title: "Robozinho".to_string(),
@@ -39,7 +42,7 @@ fn main() {
             4,
             0,
             1,
-            1,
+            *input_idx,
         ))
         .add_startup_system_to_stage(StartupStage::PreStartup, setup_board)
         .add_startup_system(setup_camera)

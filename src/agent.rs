@@ -11,6 +11,7 @@ use rand::distributions::Distribution;
 use rand::distributions::WeightedIndex;
 use std::collections::HashMap;
 use std::fs;
+use bevy::app::AppExit;
 
 #[derive(Default, Component)]
 pub struct Agent {
@@ -39,7 +40,6 @@ fn read_agent(idx: usize) -> Vec<(usize, usize)> {
         }
         let x = values[0].parse::<usize>().unwrap();
         let y = values[1].parse::<usize>().unwrap();
-        println!("{} {}", x, y);
         data.push((x, y));
     }
     data
@@ -302,6 +302,7 @@ pub fn move_agent(
     mut query_cell: Query<&mut Cell>,
     mut query_tool: Query<&mut Tool>,
     params: Res<Params>,
+    mut exit: EventWriter<AppExit>,
 ) {
     if follow_path.moves.is_empty() {
         // let time = time::Duration::from_secs_f32(0.1);
@@ -366,6 +367,7 @@ pub fn move_agent(
                 println!("Random moves cost: {}", agent.random_moves_cost);
                 agent.ended = true;
             }
+            exit.send(AppExit);
             return;
         }
 

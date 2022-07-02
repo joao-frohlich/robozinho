@@ -38,7 +38,6 @@ fn read_tools(idx: usize) -> Vec<(usize, usize)> {
         }
         let x = values[0].parse::<usize>().unwrap();
         let y = values[1].parse::<usize>().unwrap();
-        println!("{} {}", x, y);
         data.push((x, y));
     }
     data
